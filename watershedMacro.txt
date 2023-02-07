@@ -1,0 +1,40 @@
+// Ask for the input folder
+input = getDirectory("Choose the Input Folder");
+
+//Ask for the output folder
+output = getDirectory("Choose the Output Folder")
+
+processFolder(input);
+
+// function to scan folders/subfolders/files to find files with correct suffix
+function processFolder(input) {
+	list = getFileList(input);
+	list = Array.sort(list);
+	for (i = 0; i < list.length; i++) {
+
+	// Do the processing here by adding your own code.
+	// Leave the print statements until things work, then remove them.
+	//@ File(style="directory") outputDirectory
+open(input + list[i]);
+//run("Properties...", "channels=1 slices=1 frames=1 pixel_width=0.6473791 pixel_height=0.6473791 voxel_depth=1.0000000 global");
+myDir=getDirectory("image");
+name1=getTitle();
+name2=File.nameWithoutExtension;
+run("Duplicate...", "title=[Raw Image]");
+
+setOption("ScaleConversions", true);
+run("8-bit");
+run("Auto Local Threshold", "method=Bernsen radius=7 parameter_1=0 parameter_2=0 white");
+run("Invert");
+run("Watershed");
+run("Invert");
+
+rename(name1);
+
+saveAs("Tiff", output+name2+"watershed"+".tif");
+
+close();
+close();
+	print("Processing: " + input + list[i]);
+	print("Saving to: " + output);
+}

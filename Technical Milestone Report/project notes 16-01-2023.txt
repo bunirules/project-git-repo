@@ -1,0 +1,14 @@
+- add the triangle next to figure 1
+- remove some detail from fig 3 just long arrow left to right
+- figure 4 orient pictures so mm is same way
+- figure 5: get rid of top left panel and bottom right, mention in text
+that iou and segmentation are similar tho not the same so other two 
+plots are bigger
+
+- show some synthetic images, will collect real data at various objectives 
+to compare to symbac images to make them more realistic and refine camera 
+model etc say that images have room to be improved in this way.
+
+- maybe merge the two bits of fig 5 and fig 6 into one
+
+- check for mask sizes - are errors coming from not enough blurring or what

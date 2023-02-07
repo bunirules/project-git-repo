@@ -1,0 +1,16 @@
+media_multiplier			generate_PC_OPL
+cell_multiplier			generate_PC_OPL
+device_multiplier			generate_PC_OPL
+sigma					inside PSF loop
+scene_no				generate_PC_OPL
+match_fourier			inside PSF loop
+match_histogram			inside PSF loop
+match_noise				inside PSF loop
+noise_var				inside PSF loop
+defocus				generate_PC_OPL
+
+
+to newly compare seg methods on fluo gotta test it on individual trench images
+as well as the concatenated tile images
+
+GOTTA DO THIS ASAP PLEASE LET IT BE REASONABLE!!!^^^
