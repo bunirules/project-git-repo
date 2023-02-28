@@ -1,3 +1,4 @@
+# type: ignore
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib_scalebar.scalebar import ScaleBar

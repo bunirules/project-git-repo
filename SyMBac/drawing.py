@@ -126,12 +126,11 @@ def raster_cell(length, width, separation, pinching=True, FL = False):
         I_cyl = np.sqrt(R_ ** 2 - (x_cyl - R_) ** 2)
         new_cell[c, int(W / 2) - sphere_Rs[c]:int(W / 2) + sphere_Rs[c]] = np.concatenate((I_cyl, I_cyl[::-1]))
         new_cell[L - c - 1, int(W / 2) - sphere_Rs[c]:int(W / 2) + sphere_Rs[c]] = np.concatenate((I_cyl, I_cyl[::-1]))
-    # print("separation:", separation)
+
     if separation > 2 and pinching:
         S = int(np.rint(separation))
         new_cell[int((L - S) / 2) + 1:-int((L - S) / 2) - 1, :] = 0
-        # print("this thing", int((S+1) / 2))
-        for c in range(int((S) / 2)):
+        for c in range(int((S+1) / 2)): # int (S/2)
             R__ = sphere_Rs[-c - 1]
             x_cyl_ = np.arange(R__)
             I_cyl_ = np.sqrt(R__ ** 2 - (x_cyl_ - R__) ** 2)

@@ -63,16 +63,18 @@ def id_accuracy(groundarray, imagearray, image_info=False):
     return out
 
 def find_cell_info(array):
-    num_cells = np.max(array)
-    cell_areas = np.zeros(num_cells)
+    unq, counts = np.unique(array,return_counts=True)
+    unq, counts = unq[unq != 0], counts[unq != 0]
+    num_cells = len(unq)
+    # cell_areas = np.zeros(num_cells)
     cell_centroids = np.zeros([num_cells,2])
-    for i in range(1, num_cells+1):
-        coords = np.where(array == i)
-        cell_areas[i-1] = len(array[coords])
+    for i, val in enumerate(unq):
+        coords = np.where(array == val)
+        # cell_areas[i] = len(array[coords])
         y_bar = np.mean(coords[0])
         x_bar = np.mean(coords[1])
-        cell_centroids[i-1] = [y_bar, x_bar]
-    return cell_centroids, cell_areas
+        cell_centroids[i] = [y_bar, x_bar]
+    return cell_centroids, counts
 
 def find_nearest_centres(ground_centroids, cell_centroids):
     # create array of distances from each cell centroid to each ground centroid
@@ -81,6 +83,14 @@ def find_nearest_centres(ground_centroids, cell_centroids):
     nearest_ground = ground_centroids[np.argmin(distances,axis=1)]
     dist_vector = np.min(distances, axis=1)
     return nearest_ground, dist_vector #, distances
+
+def centroid_distances(groundarray, imagearray):
+    ground_centroids,_ = find_cell_info(groundarray)
+    cell_centroids,_ = find_cell_info(imagearray)
+    distances = cdist(ground_centroids,cell_centroids)
+    nearest_cells = cell_centroids[np.argmin(distances,axis=-1)]
+    dist_vectors =  np.min(distances,axis=-1)
+    return nearest_cells, dist_vectors
 
 def compare_cells(ground_centroids, ground_areas, array, min_dist, lb, ub, images_info):
     num_correct = 0
@@ -157,3 +167,26 @@ def IoU(groundarray, imagearray):
             for fake in fak:
                 out[np.all(np.equal(out,fake),axis=-1)] = [0,sizes[i]]
     return out
+
+def ignore_duplicates(near, dist):
+    cells = []
+    dists = []
+    indices = []
+    num_duplicates = 0
+    for t, trench in enumerate(near):
+        cells_temp = []
+        dists_temp = []
+        for i, cell in enumerate(trench):
+            if list(cell) not in cells_temp:
+                cells_temp.append(list(cell))
+                dists_temp.append(dist[t][i])
+            elif list(cell) in cells_temp:
+                ind = cells_temp.index(list(cell))
+                num_duplicates += 1
+                indices.append(t)
+                if dist[t][i] < dists_temp[ind]:
+                    cells_temp[ind] = list(cell)
+                    dists_temp[ind] = dist[t][i]
+        cells.extend(cells_temp)
+        dists.extend(dists_temp)
+    return np.array(cells), np.array(dists), num_duplicates, indices
