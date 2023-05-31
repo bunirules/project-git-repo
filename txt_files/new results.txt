@@ -1,0 +1,23 @@
+new results:
+
+phase contrast omnipose data (is it valid to compare results from the actual LR segmentations to HR segmentations?
+	is the linear upsample a more valid comparison given the number of pixels can affect IoU indirectly? also since
+	for the upsampled images they are compared to the 100x actual masks instead of downsampled masks does this make 
+	them more valid results?)
+
+superres trial 1 (linear)
+
+superres trial 2 (cubic)  (did linear vs cubic actually make a difference? doubtful but should be tested with linear again just in case)
+
+test on real data
+
+next steps:
+do again with realistic images (hopefully collected very soon) for PC (also with Fl)
+
+think - do we actually expect SR to improve performance far beyond what just segmentation can do - both networks would be provided
+	with similar information via training data - very difficult inputs with clear outputs
+
+SRCNN at very least is very quick to train compared to omnipose (due to simplicity) - maybe main benefit could be from the speedup of 
+	training if it turns out that asymptotic results are similar (ie quickly train SR to 100x level then train omnipose for x epochs, 
+	which might outperform omnipose at (5+)x epochs from the low res image) - should investigate this behaviour over epochs 
+	trained (up to 4000+) (current results are sup 500 epochs mostly, 200 for trial 2)

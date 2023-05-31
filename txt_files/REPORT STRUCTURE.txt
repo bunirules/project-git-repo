@@ -1,0 +1,19 @@
+REPORT STRUCTURE:
+
+1. Abstract
+2. Introduction
+	- HTM
+	- mother machine
+	- symbac
+3. Methods, Results and Discussion
+	- Initial experimentation using FIJI
+	- Experiment on symbac-generated fluorescence images
+	- Experiment with symbac-generated phase-contrast images + SR
+	- Full resolution limit experiment with PC images
+	- Second experiment with Fl images
+	- SR experiment on pc and fl images
+4. References
+5. Appendix
+
+
+PREPRINT STRUCTURE:?

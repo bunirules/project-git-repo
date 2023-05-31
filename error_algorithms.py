@@ -88,6 +88,11 @@ def centroid_distances(groundarray, imagearray):
     ground_centroids,_ = find_cell_info(groundarray)
     cell_centroids,_ = find_cell_info(imagearray)
     distances = cdist(ground_centroids,cell_centroids)
+    # print(f"shape of distances is {distances.shape}")
+    # plt.imshow(groundarray)
+    # plt.show()
+    # plt.imshow(imagearray)
+    # plt.show()
     nearest_cells = cell_centroids[np.argmin(distances,axis=-1)]
     dist_vectors =  np.min(distances,axis=-1)
     return nearest_cells, dist_vectors
@@ -128,14 +133,15 @@ def andoveror(a,b):
     return [len(set(tupa).intersection(tupb)), len(set(tupa).union(tupb))]
 
 def IoU(groundarray, imagearray):
-    """find error rate of accurately segmented pixels in imagearray given the ground truth groundarray
+    """returns IoU of imagearray given ground truth groundarray
 
     Arguments:
         groundarray -- ground truth image, as a numpy array
         imagearray -- image to find the error of, as a numpy array
 
     Returns:
-        segmentation pixel accuracy (false negatives) - how many pixels were correct out of total number of pixels classified as a cell
+        out -- array of I,U pairs for each ground cell in groundarray
+        excess -- array of pixel areas of masks which were not assigned to any ground truth
     """
     # masks displayed by distinct non-zero integers
     max = int(np.max(groundarray) + 1)
@@ -150,11 +156,12 @@ def IoU(groundarray, imagearray):
             sizes.append(len(coords[0]))
             # equivalent region in image being tested
             test_area = imagearray[coords]
-            equivalent_value = stats.mode(test_area)[0][0]
+            equivalent_value = stats.mode(test_area,keepdims=False)[0]
             previous_values.append(equivalent_value)
             image_coords = np.where((imagearray == equivalent_value))
             if len(coords) > 0:
                 iou_vals.append(andoveror(coords,image_coords))
+    # deal with any repeated values ie same mask to multiple ground truth
     unq, counts = np.unique(previous_values,return_counts=True)
     iou_vals = np.array(iou_vals)
     pv = np.array(previous_values)
@@ -166,7 +173,14 @@ def IoU(groundarray, imagearray):
             fak = dodgy_vals[np.argsort(perc)][:-1]
             for fake in fak:
                 out[np.all(np.equal(out,fake),axis=-1)] = [0,sizes[i]]
-    return out
+    # deal with any values not in previous ie mask assigned to no ground truth
+    excess = []
+    mask_vals, mask_counts = np.unique(imagearray, return_counts=True)
+    for i, val in enumerate(mask_vals):
+        if val not in previous_values and val != 0:
+            excess.append(mask_counts[i])
+    excess = np.array(excess)
+    return out, excess
 
 def ignore_duplicates(near, dist):
     cells = []

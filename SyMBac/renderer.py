@@ -24,6 +24,7 @@ from numpy import fft
 from PIL import Image
 from SyMBac.PSF import PSF_generator
 from SyMBac.pySHINE import cart2pol, sfMatch, lumMatch
+from scipy.signal import savgol_filter
 
 from SyMBac.misc import extend_background, interpolate
 
@@ -149,6 +150,8 @@ class Renderer:
         device_multiplier = -50
         self.y_border_expansion_coefficient = 2
         self.x_border_expansion_coefficient = 2
+        self.adjusted_real_image_list = []
+        self.smoothed_patterns = []
 
         if len(self.PSF_list) != len(self.real_image_list):
             print(f"need same number of PSFs and real images, have {len(self.PSF_list)} and {len(self.real_image_list)}")
@@ -176,6 +179,7 @@ class Renderer:
 
         convolved = convolve_rescale(temp_expanded_scene, temp_kernel, 1 / simulation.resize_amount, rescale_int=True)
         self.real_resize, self.expanded_resized = make_images_same_shape(self.real_image, convolved, rescale_int=True)
+        self.real_resize_list = [make_images_same_shape(real_image, convolved, rescale_int=True)[0] for real_image in real_image_list]
         mean_error = []
         media_error = []
         cell_error = []
@@ -201,21 +205,33 @@ class Renderer:
         device_var_error)
 
     def select_intensity_napari(self,ml=None,cl=None,dl=None):
-        if np.any(ml) and np.any(cl) and np.any(dl):
-            self.media_label_data = ml
-            self.cell_label_data = cl
-            self.device_label_data = dl
+        # if np.any(ml) and np.any(cl) and np.any(dl):
+        #     self.media_label_data = ml
+        #     self.cell_label_data = cl
+        #     self.device_label_data = dl
+        #     self.label_data = True
+        if ml and cl and dl:
+            self.media_label_data_list = ml
+            self.cell_label_data_list = cl
+            self.device_label_data_list = dl
             self.label_data = True
         else:
-            viewer = napari.view_image(self.real_resize)
-            self.media_label = viewer.add_labels(np.zeros(self.real_resize.shape).astype(int), name="Media")
-            self.cell_label = viewer.add_labels(np.zeros(self.real_resize.shape).astype(int), name="Cell")
-            self.device_label = viewer.add_labels(np.zeros(self.real_resize.shape).astype(int), name="Device")
-            self.label_data = False
+            self.media_label_list = []
+            self.cell_label_list = []
+            self.device_label_list = []
+            for real_resize in self.real_resize_list:
+                viewer = napari.view_image(real_resize)
+                self.media_label = viewer.add_labels(np.zeros(real_resize.shape).astype(int), name="Media")
+                self.cell_label = viewer.add_labels(np.zeros(real_resize.shape).astype(int), name="Cell")
+                self.device_label = viewer.add_labels(np.zeros(real_resize.shape).astype(int), name="Device")
+                self.media_label_list.append(self.media_label)
+                self.cell_label_list.append(self.cell_label)
+                self.device_label_list.append(self.device_label)
+                self.label_data = False
 
     def generate_test_comparison(self, media_multiplier=88, cell_multiplier=2.5, device_multiplier=1, sigma=5.2,
-                                 scene_no=-1, match_fourier=False, match_histogram=True, match_noise=True,
-                                 debug_plot=False, noise_var=0.00, defocus=1.8, number=None, generate=False):
+                                 scene_no=58, match_fourier=False, match_histogram=True, match_noise=True,
+                                 debug_plot=False, noise_var=0.00, defocus=1.8, number=None, generate=False, adjust_background=False):
         """
         Takes all the parameters we've defined and calculated, and uses them to finally generate a synthetic image.
 
@@ -462,7 +478,8 @@ class Renderer:
                 factor = self.PSF.pix_mic_conv/PSF.pix_mic_conv
                 size = (int(expanded_scene.shape[0]*factor),int(expanded_scene.shape[1]*factor))
                 es, esnc, em = interpolate(expanded_scene,size), interpolate(expanded_scene_no_cells,size), interpolate(expanded_mask,size,method='nearest')
-                real_image = self.real_image_list[i]
+                real_image = self.adjusted_real_image_list[i]
+
                 radius, scale, NA, n, _, λ = PSF.radius, PSF.scale, PSF.NA, PSF.n, PSF.apo_sigma, PSF.wavelength
 
                 real_media_mean, real_cell_mean, real_device_mean, real_means, real_media_var, real_cell_var, real_device_var, real_vars = self.image_params
@@ -542,6 +559,11 @@ class Renderer:
                     noisy_img = match_histograms(noisy_img, real_resize)#, multichannel=False)
                 else:
                     pass
+                if adjust_background:
+                    noisy_img += self.smoothed_patterns[i]
+                    actual_real_image = real_image + self.smoothed_patterns[i]
+                else:
+                    actual_real_image = real_image
                 noisy_img = rescale_intensity(noisy_img.astype(np.float32), out_range=(0, 1))
 
                 ## getting the cell mask to the right shape
@@ -549,16 +571,16 @@ class Renderer:
                                                 preserve_range=True,
                                                 order=0)
                 if len(np.unique(expanded_mask_resized)) > 2:
-                    _, expanded_mask_resized_reshaped = make_images_same_shape(real_image, expanded_mask_resized,
+                    _, expanded_mask_resized_reshaped = make_images_same_shape(actual_real_image, expanded_mask_resized,
                                                                             rescale_int=False)
                 else:
-                    _, expanded_mask_resized_reshaped = make_images_same_shape(real_image, expanded_mask_resized,
+                    _, expanded_mask_resized_reshaped = make_images_same_shape(actual_real_image, expanded_mask_resized,
                                                                             rescale_int=True)
 
                 expanded_media_mask = rescale(
                     (esnc == device_multiplier) ^ (es - esnc).astype(bool),
                     1 / self.simulation.resize_amount, anti_aliasing=False)
-                real_resize, expanded_media_mask = make_images_same_shape(real_image, expanded_media_mask,
+                real_resize, expanded_media_mask = make_images_same_shape(actual_real_image, expanded_media_mask,
                                                                         rescale_int=True)
                 just_media = expanded_media_mask * noisy_img
 
@@ -566,14 +588,14 @@ class Renderer:
                 expanded_cell_pseudo_mask = rescale(expanded_cell_pseudo_mask, 1 / self.simulation.resize_amount,
                                                     anti_aliasing=False)
 
-                real_resize, expanded_cell_pseudo_mask = make_images_same_shape(real_image, expanded_cell_pseudo_mask,
+                real_resize, expanded_cell_pseudo_mask = make_images_same_shape(actual_real_image, expanded_cell_pseudo_mask,
                                                                                 rescale_int=True)
                 just_cells = expanded_cell_pseudo_mask * noisy_img
 
                 expanded_device_mask = esnc
 
                 expanded_device_mask = rescale(expanded_device_mask, 1 / self.simulation.resize_amount, anti_aliasing=False)
-                real_resize, expanded_device_mask = make_images_same_shape(real_image, expanded_device_mask,
+                real_resize, expanded_device_mask = make_images_same_shape(actual_real_image, expanded_device_mask,
                                                                         rescale_int=True)
                 real_resize_list.append(real_resize)                                                        
                 just_device = expanded_device_mask * noisy_img
@@ -594,7 +616,6 @@ class Renderer:
                     media_var_error[number].append(perc_diff(simulated_vars[0], real_media_var))
                     cell_var_error[number].append(perc_diff(simulated_vars[1], real_cell_var))
                     device_var_error[number].append(perc_diff(simulated_vars[2], real_device_var))
-
                 noisy_imgs.append(noisy_img)
                 emrrs.append(expanded_mask_resized_reshaped.astype(int))
             if debug_plot:
@@ -607,10 +628,12 @@ class Renderer:
                 ax0.imshow(emrrs[number].astype(int), cmap="Greys_r")
                 ax0.set_title("Mask")
                 ax0.axis("off")
-                ax1.imshow(noisy_imgs[number], cmap="Greys_r")
+                im1 = ax1.imshow(noisy_imgs[number], cmap="Greys_r")
+                # fig.colorbar(im1,ax=ax1)
                 ax1.set_title("Synthetic")
                 ax1.axis("off")
-                ax2.imshow(real_resize_list[number], cmap="Greys_r")
+                im2 = ax2.imshow(real_resize_list[number], cmap="Greys_r")
+                # fig.colorbar(im2,ax=ax2)
                 ax2.set_title("Real")
                 ax2.axis("off")
                 ax3.plot(mean_error[number])
@@ -651,11 +674,12 @@ class Renderer:
                 factor = self.PSF.pix_mic_conv/PSF.pix_mic_conv
                 size = (int(expanded_scene.shape[0]*factor),int(expanded_scene.shape[1]*factor))
                 es, esnc, em = interpolate(expanded_scene,size), interpolate(expanded_scene_no_cells,size), interpolate(expanded_mask,size,method='nearest')
-                real_image = self.real_image_list[i]
+                real_image = self.adjusted_real_image_list[i]
+
                 radius, scale, NA, n, _, λ = PSF.radius, PSF.scale, PSF.NA, PSF.n, PSF.apo_sigma, PSF.wavelength
 
-                # real_media_mean, real_cell_mean, real_device_mean, real_means, real_media_var, real_cell_var, real_device_var, real_vars = self.image_params
-                # mean_error, media_error, cell_error, device_error, mean_var_error, media_var_error, cell_var_error, device_var_error = self.error_params
+                real_media_mean, real_cell_mean, real_device_mean, real_means, real_media_var, real_cell_var, real_device_var, real_vars = self.image_params
+                mean_error, media_error, cell_error, device_error, mean_var_error, media_var_error, cell_var_error, device_var_error = self.error_params
 
                 if PSF.mode == "phase contrast":
                     new_PSF = PSF_generator(radius=PSF.radius, wavelength=PSF.wavelength, NA=PSF.NA,
@@ -731,6 +755,9 @@ class Renderer:
                     noisy_img = match_histograms(noisy_img, real_resize)#, multichannel=False)
                 else:
                     pass
+                if adjust_background:
+                    noisy_img += self.smoothed_patterns[i]
+                    actual_real_image = real_image + self.smoothed_patterns[i]
                 noisy_img = rescale_intensity(noisy_img.astype(np.float32), out_range=(0, 1))
 
                 ## getting the cell mask to the right shape
@@ -738,34 +765,11 @@ class Renderer:
                                                 preserve_range=True,
                                                 order=0)
                 if len(np.unique(expanded_mask_resized)) > 2:
-                    _, expanded_mask_resized_reshaped = make_images_same_shape(real_image, expanded_mask_resized,
+                    _, expanded_mask_resized_reshaped = make_images_same_shape(actual_real_image, expanded_mask_resized,
                                                                             rescale_int=False)
                 else:
-                    _, expanded_mask_resized_reshaped = make_images_same_shape(real_image, expanded_mask_resized,
+                    _, expanded_mask_resized_reshaped = make_images_same_shape(actual_real_image, expanded_mask_resized,
                                                                             rescale_int=True)
-
-                expanded_media_mask = rescale(
-                    (esnc == device_multiplier) ^ (es - esnc).astype(bool),
-                    1 / self.simulation.resize_amount, anti_aliasing=False)
-                real_resize, expanded_media_mask = make_images_same_shape(real_image, expanded_media_mask,
-                                                                        rescale_int=True)
-                just_media = expanded_media_mask * noisy_img
-
-                expanded_cell_pseudo_mask = (es - esnc).astype(bool)
-                expanded_cell_pseudo_mask = rescale(expanded_cell_pseudo_mask, 1 / self.simulation.resize_amount,
-                                                    anti_aliasing=False)
-
-                real_resize, expanded_cell_pseudo_mask = make_images_same_shape(real_image, expanded_cell_pseudo_mask,
-                                                                                rescale_int=True)
-                just_cells = expanded_cell_pseudo_mask * noisy_img
-
-                expanded_device_mask = esnc
-
-                expanded_device_mask = rescale(expanded_device_mask, 1 / self.simulation.resize_amount, anti_aliasing=False)
-                real_resize, expanded_device_mask = make_images_same_shape(real_image, expanded_device_mask,
-                                                                        rescale_int=True)
-                real_resize_list.append(real_resize)                                                        
-                just_device = expanded_device_mask * noisy_img
 
                 noisy_imgs.append(noisy_img)
                 emrrs.append(expanded_mask_resized_reshaped.astype(int))
@@ -919,7 +923,7 @@ class Renderer:
         size = (int(np.ceil(expanded_scene.shape[0]/factor))*factor,int(np.ceil(expanded_scene.shape[1]/factor))*factor)
         return extend_background(expanded_scene,size), extend_background(expanded_scene_no_cells,size), extend_background(expanded_mask,size)
 
-    def optimise_synth_image(self, manual_update):
+    def optimise_synth_image(self, manual_update, adjust_background=False):
 
         """
 
@@ -927,26 +931,62 @@ class Renderer:
         :return: ipywidget object for optimisation of synthetic data
         """
 
-        if not self.label_data:
-            self.media_label_data = self.media_label.data
-            self.cell_label_data = self.cell_label.data
-            self.device_label_data = self.device_label.data
+        i = len(self.params_list)
 
-        self.real_media_mean = self.real_resize[np.where(self.media_label_data)].mean()
-        self.real_cell_mean = self.real_resize[np.where(self.cell_label_data)].mean()
-        self.real_device_mean = self.real_resize[np.where(self.device_label_data)].mean()
+        if self.label_data:
+            self.media_label_data = self.media_label_data_list[i]
+            self.cell_label_data = self.cell_label_data_list[i]
+            self.device_label_data = self.device_label_data_list[i]
+
+        elif not self.label_data:
+            self.media_label_data = self.media_label_list[i].data
+            self.cell_label_data = self.cell_label_list[i].data
+            self.device_label_data = self.device_label_list[i].data
+
+        current_real_image = self.real_resize_list[i]
+
+        img_height = self.media_label_data.shape[0]
+
+        # plt.pcolor(current_real_image * self.device_label_data,cmap="Greys_r")
+        # plt.colorbar()
+        # plt.show()
+
+
+        if adjust_background:
+            order = min(img_height//6, 11)
+            background = current_real_image * self.device_label_data
+            background_pattern = np.sum(background,axis=1)/np.sum(self.device_label_data,axis=1)
+            smoothed_pattern = savgol_filter(background_pattern,order,2).reshape(img_height,1)
+            updated_real_image = current_real_image - smoothed_pattern
+            try:
+                self.adjusted_real_image_list[i] = updated_real_image
+            except IndexError:
+                self.adjusted_real_image_list.append(updated_real_image)
+        else:
+            smoothed_pattern = np.zeros([img_height,1])
+            try:
+                self.adjusted_real_image_list[i] = current_real_image
+            except IndexError:
+                self.adjusted_real_image_list.append(current_real_image)
+        try:
+            self.smoothed_patterns[i] = smoothed_pattern
+        except IndexError:
+            self.smoothed_patterns.append(smoothed_pattern)
+    
+
+        self.real_media_mean = current_real_image[np.where(self.media_label_data)].mean()
+        self.real_cell_mean = current_real_image[np.where(self.cell_label_data)].mean()
+        self.real_device_mean = current_real_image[np.where(self.device_label_data)].mean()
         self.real_means = np.array((self.real_media_mean, self.real_cell_mean, self.real_device_mean))
 
-        self.real_media_var = self.real_resize[np.where(self.media_label_data)].var()
-        self.real_cell_var = self.real_resize[np.where(self.cell_label_data)].var()
-        self.real_device_var = self.real_resize[np.where(self.device_label_data)].var()
+        self.real_media_var = current_real_image[np.where(self.media_label_data)].var()
+        self.real_cell_var = current_real_image[np.where(self.cell_label_data)].var()
+        self.real_device_var = current_real_image[np.where(self.device_label_data)].var()
         self.real_vars = np.array((self.real_media_var, self.real_cell_var, self.real_device_var))
 
         self.image_params = (
         self.real_media_mean, self.real_cell_mean, self.real_device_mean, self.real_means, self.real_media_var,
         self.real_cell_var, self.real_device_var, self.real_vars)
-
-        i = len(self.params_list)
 
         self.params = interactive(
                 self.generate_test_comparison,
@@ -963,13 +1003,14 @@ class Renderer:
                 debug_plot=fixed(True),
                 defocus=(0, 20, 0.1),
                 number=fixed(i),
-                generate=fixed(False)
+                generate=fixed(False),
+                adjust_background=fixed(adjust_background)
             )
 
         return self.params
 
     def generate_training_data(self, sample_amount, randomise_hist_match, randomise_noise_match,
-                               burn_in, n_samples, save_dir, in_series=False, seed=False):
+                               burn_in, n_samples, save_dir, in_series=False, seed=False, adjust_background=False):
         """
         Generates the training data from a Jupyter interactive output of generate_test_comparison
 
@@ -1052,7 +1093,7 @@ class Renderer:
         if not multiple:
             current_file_num = len(os.listdir(f"{save_dir}/convolutions"))
 
-        def generate_samples(z, multiple):
+        def generate_samples(z, multiple, adjust_background):
             media_multipliers = []
             cell_multipliers = []
             device_multipliers = []
@@ -1100,7 +1141,8 @@ class Renderer:
                 debug_plot=False,
                 noise_var=noise_vars,
                 defocus=defocuses,
-                generate=True
+                generate=True,
+                adjust_background=adjust_background
             ) 
 
             if multiple:
@@ -1129,8 +1171,9 @@ class Renderer:
                     mask = Image.fromarray(masks[0].astype(np.uint8))
                     mask.save("{}/masks/synth_{}.tif".format(save_dir, str(z).zfill(5)))
 
-        Parallel(n_jobs=njobs)(delayed(generate_samples)(z, multiple) for z in
+        Parallel(n_jobs=njobs)(delayed(generate_samples)(z, multiple, adjust_background) for z in
                                tqdm(range(current_file_num, n_samples + current_file_num), desc="Sample generation"))
 
     def save_params(self):
         self.params_list.append(self.params.kwargs)
+        print(f"current length of params_list: {len(self.params_list)}")
